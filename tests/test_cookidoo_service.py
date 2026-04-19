@@ -89,7 +89,7 @@ async def test_create_recipe_converts_minutes_to_seconds():
         total_time=30,
     )
 
-    call_args = mock_api.create_custom_recipe.call_args[0][0]
+    call_args = mock_api.create_custom_recipe.call_args.args[0]
     assert call_args.active_time == 15 * 60  # 900 seconds
     assert call_args.total_time == 30 * 60  # 1800 seconds
 
@@ -106,7 +106,7 @@ async def test_create_recipe_uses_device_in_tools():
         steps=["Cook"],
     )
 
-    call_args = mock_api.create_custom_recipe.call_args[0][0]
+    call_args = mock_api.create_custom_recipe.call_args.args[0]
     assert call_args.tools == ["TM7"]
 
 
@@ -126,7 +126,7 @@ async def test_create_recipe_hints_appended_to_instructions():
         hints=hints,
     )
 
-    call_args = mock_api.create_custom_recipe.call_args[0][0]
+    call_args = mock_api.create_custom_recipe.call_args.args[0]
     assert call_args.instructions == ["Step 1", "Step 2", "Tip A", "Tip B"]
 
 
@@ -145,7 +145,7 @@ async def test_create_recipe_no_hints_keeps_steps_only():
         hints=None,
     )
 
-    call_args = mock_api.create_custom_recipe.call_args[0][0]
+    call_args = mock_api.create_custom_recipe.call_args.args[0]
     assert call_args.instructions == ["Step 1", "Step 2"]
 
 
@@ -162,7 +162,7 @@ async def test_create_recipe_passes_serving_size():
         servings=6,
     )
 
-    call_args = mock_api.create_custom_recipe.call_args[0][0]
+    call_args = mock_api.create_custom_recipe.call_args.args[0]
     assert call_args.serving_size == 6
 
 
@@ -189,7 +189,7 @@ async def test_edit_recipe_converts_times_to_seconds():
         total_time=40,
     )
 
-    call_args = mock_api.edit_custom_recipe.call_args[0][1]
+    call_args = mock_api.edit_custom_recipe.call_args.args[1]
     assert call_args.active_time == 20 * 60
     assert call_args.total_time == 40 * 60
 
@@ -202,7 +202,7 @@ async def test_edit_recipe_none_times_stay_none():
 
     await service.edit_custom_recipe("recipe-123", name="New Name")
 
-    call_args = mock_api.edit_custom_recipe.call_args[0][1]
+    call_args = mock_api.edit_custom_recipe.call_args.args[1]
     assert call_args.name == "New Name"
     assert call_args.active_time is None
     assert call_args.total_time is None
@@ -216,5 +216,58 @@ async def test_edit_recipe_passes_recipe_id():
 
     await service.edit_custom_recipe("my-recipe-id", name="Updated")
 
-    positional = mock_api.edit_custom_recipe.call_args[0]
-    assert positional[0] == "my-recipe-id"
+    assert mock_api.edit_custom_recipe.call_args.args[0] == "my-recipe-id"
+
+
+async def test_edit_recipe_passes_optional_fields():
+    service = CookidooService("email@test.com", "password")
+    mock_api = AsyncMock()
+    mock_api.edit_custom_recipe.return_value = MagicMock()
+    service._api_client = mock_api
+
+    await service.edit_custom_recipe(
+        "recipe-123",
+        ingredients=["100g flour", "2 eggs"],
+        steps=["Mix", "Bake"],
+        servings=8,
+    )
+
+    call_args = mock_api.edit_custom_recipe.call_args.args[1]
+    assert call_args.ingredients == ["100g flour", "2 eggs"]
+    assert call_args.instructions == ["Mix", "Bake"]
+    assert call_args.serving_size == 8
+
+
+# ---------------------------------------------------------------------------
+# CookidooService.login — error paths
+# ---------------------------------------------------------------------------
+
+
+@patch("cookidoo_service.aiohttp.TCPConnector")
+@patch("cookidoo_service.ClientSession")
+@patch("cookidoo_service.get_localization_options", new_callable=AsyncMock)
+async def test_login_empty_localizations_raises(mock_get_loc, MockSession, MockConnector):
+    mock_get_loc.return_value = []
+    mock_session = MagicMock()
+    mock_session.close = AsyncMock()
+    MockSession.return_value = mock_session
+
+    service = CookidooService("test@test.com", "pass")
+    with pytest.raises(Exception, match="Failed to authenticate"):
+        await service.login()
+
+
+@patch("cookidoo_service.aiohttp.TCPConnector")
+@patch("cookidoo_service.ClientSession")
+@patch("cookidoo_service.get_localization_options", new_callable=AsyncMock)
+async def test_login_closes_session_on_exception(mock_get_loc, MockSession, MockConnector):
+    mock_get_loc.return_value = []  # triggers ValueError → except → close()
+    mock_session = MagicMock()
+    mock_session.close = AsyncMock()
+    MockSession.return_value = mock_session
+
+    service = CookidooService("test@test.com", "pass")
+    with pytest.raises(Exception):
+        await service.login()
+
+    mock_session.close.assert_awaited_once()

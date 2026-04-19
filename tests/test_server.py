@@ -123,9 +123,9 @@ async def test_generate_recipe_empty_name_returns_error():
 # ---------------------------------------------------------------------------
 
 
-async def test_upload_recipe_not_connected_returns_message():
-    server._cookidoo_service = None
-    server._cookidoo_api = None
+async def test_upload_recipe_not_connected_returns_message(monkeypatch):
+    monkeypatch.setattr(server, "_cookidoo_service", None)
+    monkeypatch.setattr(server, "_cookidoo_api", None)
 
     async with Client(mcp) as client:
         result = await client.call_tool(
@@ -136,23 +136,20 @@ async def test_upload_recipe_not_connected_returns_message():
     assert "Not connected" in text
 
 
-async def test_upload_recipe_invalid_json_returns_message():
-    server._cookidoo_service = MagicMock()
-    server._cookidoo_api = MagicMock()
-    try:
-        async with Client(mcp) as client:
-            result = await client.call_tool(
-                "upload_custom_recipe",
-                {"recipe_json": "not valid json at all"},
-            )
-        text = _get_text(result)
-        assert "Invalid JSON" in text
-    finally:
-        server._cookidoo_service = None
-        server._cookidoo_api = None
+async def test_upload_recipe_invalid_json_returns_message(monkeypatch):
+    monkeypatch.setattr(server, "_cookidoo_service", MagicMock())
+    monkeypatch.setattr(server, "_cookidoo_api", MagicMock())
+
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "upload_custom_recipe",
+            {"recipe_json": "not valid json at all"},
+        )
+    text = _get_text(result)
+    assert "Invalid JSON" in text
 
 
-async def test_upload_recipe_success_returns_id_and_url():
+async def test_upload_recipe_success_returns_id_and_url(monkeypatch):
     mock_created = MagicMock()
     mock_created.name = "Cookies"
     mock_created.id = "abc123"
@@ -161,45 +158,39 @@ async def test_upload_recipe_success_returns_id_and_url():
     mock_service = MagicMock()
     mock_service.create_custom_recipe = AsyncMock(return_value=mock_created)
 
-    server._cookidoo_service = mock_service
-    server._cookidoo_api = MagicMock()
-    try:
-        recipe_json = json.dumps(
-            {
-                "name": "Cookies",
-                "ingredients": ["200g flour", "100g butter"],
-                "steps": ["Mix", "Bake"],
-            }
+    monkeypatch.setattr(server, "_cookidoo_service", mock_service)
+    monkeypatch.setattr(server, "_cookidoo_api", MagicMock())
+
+    recipe_json = json.dumps(
+        {
+            "name": "Cookies",
+            "ingredients": ["200g flour", "100g butter"],
+            "steps": ["Mix", "Bake"],
+        }
+    )
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "upload_custom_recipe",
+            {"recipe_json": recipe_json},
         )
-        async with Client(mcp) as client:
-            result = await client.call_tool(
-                "upload_custom_recipe",
-                {"recipe_json": recipe_json},
-            )
-        text = _get_text(result)
-        assert "abc123" in text
-        assert "Cookies" in text
-        assert "https://cookidoo.es/recipes/abc123" in text
-    finally:
-        server._cookidoo_service = None
-        server._cookidoo_api = None
+    text = _get_text(result)
+    assert "abc123" in text
+    assert "Cookies" in text
+    assert "https://cookidoo.es/recipes/abc123" in text
 
 
-async def test_upload_recipe_invalid_recipe_data_returns_message():
-    server._cookidoo_service = MagicMock()
-    server._cookidoo_api = MagicMock()
-    try:
-        # Valid JSON but missing required fields
-        async with Client(mcp) as client:
-            result = await client.call_tool(
-                "upload_custom_recipe",
-                {"recipe_json": '{"name": "test"}'},
-            )
-        text = _get_text(result)
-        assert "Invalid recipe data" in text
-    finally:
-        server._cookidoo_service = None
-        server._cookidoo_api = None
+async def test_upload_recipe_invalid_recipe_data_returns_message(monkeypatch):
+    monkeypatch.setattr(server, "_cookidoo_service", MagicMock())
+    monkeypatch.setattr(server, "_cookidoo_api", MagicMock())
+
+    # Valid JSON but missing required fields
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "upload_custom_recipe",
+            {"recipe_json": '{"name": "test"}'},
+        )
+    text = _get_text(result)
+    assert "Invalid recipe data" in text
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +211,26 @@ async def test_connect_missing_credentials_returns_error(mock_dotenv, monkeypatc
 
 @patch("cookidoo_service.load_dotenv")
 @patch("server.CookidooService")
+async def test_connect_passes_country_language_device(MockService, mock_dotenv, monkeypatch):
+    monkeypatch.setenv("COOKIDOO_EMAIL", "user@test.com")
+    monkeypatch.setenv("COOKIDOO_PASSWORD", "pass")
+    monkeypatch.setenv("COOKIDOO_COUNTRY", "fr")
+    monkeypatch.setenv("COOKIDOO_LANGUAGE", "fr-FR")
+    monkeypatch.setenv("COOKIDOO_DEVICE", "TM5")
+
+    mock_instance = AsyncMock()
+    mock_instance.login = AsyncMock(return_value=MagicMock())
+    MockService.return_value = mock_instance
+
+    async with Client(mcp) as client:
+        await client.call_tool("connect_to_cookidoo", {})
+    MockService.assert_called_once_with(
+        "user@test.com", "pass", "fr", "fr-FR", "TM5"
+    )
+
+
+@patch("cookidoo_service.load_dotenv")
+@patch("server.CookidooService")
 async def test_connect_success_returns_message(MockService, mock_dotenv, monkeypatch):
     monkeypatch.setenv("COOKIDOO_EMAIL", "user@test.com")
     monkeypatch.setenv("COOKIDOO_PASSWORD", "pass")
@@ -231,12 +242,58 @@ async def test_connect_success_returns_message(MockService, mock_dotenv, monkeyp
     mock_instance.login = AsyncMock(return_value=MagicMock())
     MockService.return_value = mock_instance
 
-    try:
-        async with Client(mcp) as client:
-            result = await client.call_tool("connect_to_cookidoo", {})
-        text = _get_text(result)
-        assert "Successfully connected" in text
-        assert "user@test.com" in text
-    finally:
-        server._cookidoo_service = None
-        server._cookidoo_api = None
+    async with Client(mcp) as client:
+        result = await client.call_tool("connect_to_cookidoo", {})
+    text = _get_text(result)
+    assert "Successfully connected" in text
+    assert "user@test.com" in text
+
+
+# ---------------------------------------------------------------------------
+# receta() prompt
+# ---------------------------------------------------------------------------
+
+
+from server import receta as receta_prompt  # noqa: E402
+
+
+def _msg_text(msg) -> str:
+    """Extract text from a fastmcp Message."""
+    return msg.content.text
+
+
+def test_receta_returns_two_messages(monkeypatch):
+    monkeypatch.delenv("COOKIDOO_DEVICE", raising=False)
+    result = receta_prompt()
+    assert len(result) == 2
+    assert result[0].role == "user"
+    assert result[1].role == "assistant"
+
+
+def test_receta_default_device_is_tm6(monkeypatch):
+    monkeypatch.delenv("COOKIDOO_DEVICE", raising=False)
+    result = receta_prompt()
+    text = _msg_text(result[0])
+    assert "TM6" in text
+    assert "160" in text
+
+
+@pytest.mark.parametrize("device,expected_temp", [
+    ("TM31", "100"),
+    ("TM5", "120"),
+    ("TM6", "160"),
+    ("TM7", "180"),
+])
+def test_receta_temp_limits_per_device(device, expected_temp, monkeypatch):
+    monkeypatch.setenv("COOKIDOO_DEVICE", device)
+    result = receta_prompt()
+    text = _msg_text(result[0])
+    assert device in text
+    assert expected_temp in text
+
+
+def test_receta_unknown_device_defaults_to_160(monkeypatch):
+    monkeypatch.setenv("COOKIDOO_DEVICE", "TM99")
+    result = receta_prompt()
+    text = _msg_text(result[0])
+    assert "160" in text

@@ -128,7 +128,6 @@ _Construido sobre `alexandrepa/mcp-cookidoo` como base_
 - [ ] **Eliminar `prompt.md` y `prompt_FR.md`** del root — son borradores obsoletos supersedidos por el `@mcp.prompt()` en `server.py`. Confunden a nuevos contribuidores.
 - [ ] **Verificar `fastmcp.json`** — artifact del commit inicial. Comprobar si sigue siendo necesario o si puede eliminarse.
 - [ ] **Soporte multilingual en `/receta`** — el prompt original tenía versión FR. El MCP Prompt actual solo tiene reglas en es-ES. Para open source internacional, considerar parámetro `lang` o prompt separado.
-- [ ] **Soporte multilingual en `/receta`** — el prompt original tenía versión FR. El MCP Prompt actual solo tiene reglas en es-ES. Para open source internacional, considerar parámetro `lang` o prompt separado.
 
 ---
 
