@@ -14,6 +14,14 @@
 **Unblocked (2026-04-19):** CookidooChapter structure confirmed — `CookidooChapter(name, recipes=[CookidooChapterRecipe(id, name, total_time)])`. Full structure available.
 **Where to start:** `server.py` (new tool calling `api.get_managed_collections()`, iterate `.chapters[].recipes`).
 
+## Future Features
+
+### Reorganización de colecciones en Cookidoo
+**What:** Flujo asistido por Claude para reorganizar las colecciones propias en un esquema más claro (aprobadas / a probar / por categoría).
+**Why:** Hoy hay 8 colecciones mezcladas: algunas son para planning (`Las probe y me gustaron`), otras son experimentales (`Quiero Probar`, `Quiero probar sin harina`, `Dulces - quiero probar`). La distinción es implícita y mental. A medida que crece la librería, mantener esto ordenado manualmente se complica.
+**Propuesta:** Un nuevo MCP tool `reorganize_library` o un flujo en `/semana` que permita mover recetas entre colecciones conversacionalmente ("mueve esta receta de Quiero Probar a Las probe y me gustaron"). Requiere `add_recipes_to_custom_collection()` y `remove_recipes_from_custom_collection()` del fork.
+**Depende de:** que las colecciones de planning y experimentales estén bien diferenciadas en `COOKIDOO_PLANNING_COLLECTIONS`.
+
 ## Technical Debt
 
 ### FastMCP lifespan context manager
