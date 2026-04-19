@@ -46,6 +46,14 @@ class CookidooService:
     """Service class for managing Cookidoo API interactions."""
 
     def __init__(self, email: str, password: str, country: str = "es", language: str = "es-ES", device: str = "TM6"):
+        """
+        Args:
+            email: Cookidoo account email.
+            password: Cookidoo account password.
+            country: Country code for localization (default: "es").
+            language: Language code for localization (default: "es-ES").
+            device: Thermomix model identifier (default: "TM6").
+        """
         self.email = email
         self.password = password
         self.country = country
@@ -62,6 +70,7 @@ class CookidooService:
             Exception: If authentication fails
         """
         try:
+            # TODO: make verify_ssl configurable via COOKIDOO_VERIFY_SSL env var (see TODOS.md)
             self._session = ClientSession(connector=aiohttp.TCPConnector(verify_ssl=False))
 
             localizations = await get_localization_options(country=self.country, language=self.language)

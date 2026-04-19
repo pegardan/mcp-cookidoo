@@ -5,11 +5,22 @@ Main server file containing MCP tool definitions for interacting with Cookidoo.
 """
 
 import os
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
 from cookidoo_service import CookidooService, load_cookidoo_credentials
 from schemas import CustomRecipe
 import json
+
+load_dotenv()
+
+# Temperature limits (°C) per Thermomix model
+DEVICE_MAX_TEMP: dict[str, int] = {
+    "TM31": 100,
+    "TM5": 120,
+    "TM6": 160,
+    "TM7": 180,
+}
 
 # Initialize FastMCP server
 mcp = FastMCP("cookidoo-mcp-server")
@@ -87,7 +98,7 @@ async def get_recipe_details(recipe_id: str) -> str:
         recipe = await _cookidoo_api.get_recipe_details(recipe_id)
         
         # Format the results
-        result = f"Recipe Details:\n\n"
+        result = "Recipe Details:\n\n"
         result += f"Name: {recipe.name}\n"
         result += f"ID: {recipe.id}\n\n"
         
@@ -131,6 +142,11 @@ async def get_recipe_details(recipe_id: str) -> str:
         return f"Failed to get recipe details: {str(e)}"
 
 
+def _parse_text_list(text: str) -> list[str]:
+    """Split a text block into a list, by newlines if present, else by commas."""
+    return [item.strip() for item in (text.split('\n') if '\n' in text else text.split(',')) if item.strip()]
+
+
 @mcp.tool()
 async def generate_recipe_structure(
     name: str,
@@ -162,27 +178,17 @@ async def generate_recipe_structure(
     """
     try:
         # Parse ingredients (split by newlines or commas)
-        ingredients_list = [
-            ing.strip() 
-            for ing in (ingredients.split('\n') if '\n' in ingredients else ingredients.split(','))
-            if ing.strip()
-        ]
-        
+        ingredients_list = _parse_text_list(ingredients)
+
         # Parse steps (split by newlines or numbered steps)
         steps_list = [
             step.strip().lstrip('0123456789.)-• ')
             for step in steps.split('\n')
             if step.strip()
         ]
-        
+
         # Parse hints if provided
-        hints_list = None
-        if hints:
-            hints_list = [
-                hint.strip()
-                for hint in (hints.split('\n') if '\n' in hints else hints.split(','))
-                if hint.strip()
-            ]
+        hints_list = _parse_text_list(hints) if hints else None
         
         # Create and validate the recipe using Pydantic
         recipe = CustomRecipe(
@@ -246,7 +252,8 @@ async def upload_custom_recipe(recipe_json: str) -> str:
             hints=recipe.hints
         )
 
-        return f"Recipe '{created.name}' created successfully!\n\nRecipe ID: {created.id}\nURL: {created.url}\n\nYour recipe is now saved in your Cookidoo account!"
+        recipe_url = getattr(created, "url", None) or "N/A"
+        return f"Recipe '{created.name}' created successfully!\n\nRecipe ID: {created.id}\nURL: {recipe_url}\n\nYour recipe is now saved in your Cookidoo account!"
         
     except Exception as e:
         return f"Upload failed: {str(e)}"
@@ -255,20 +262,8 @@ async def upload_custom_recipe(recipe_json: str) -> str:
 @mcp.prompt()
 def receta() -> list[Message]:
     """Convierte una receta al formato Thermomix y la sube a Cookidoo"""
-    # Ensure .env variables are loaded before reading COOKIDOO_DEVICE
-    from dotenv import load_dotenv
-    load_dotenv()
-
     device = os.getenv("COOKIDOO_DEVICE", "TM6")
-
-    # Límites de temperatura por modelo
-    temp_limits = {
-        "TM31": 100,
-        "TM5": 120,
-        "TM6": 160,
-        "TM7": 180,
-    }
-    max_temp = temp_limits.get(device, 160)
+    max_temp = DEVICE_MAX_TEMP.get(device, 160)
 
     instructions = f"""Eres un asistente culinario experto en Thermomix. Tu misión es convertir cualquier receta \
 (desde una URL, texto pegado o foto) al formato Thermomix y subirla a Cookidoo.
