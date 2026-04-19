@@ -1,5 +1,49 @@
 # thermomix-mcp — Contexto del proyecto
 
+## Metodología: Spec-Driven Development
+
+Este proyecto usa **spec-driven development** con gstack. Toda feature de cierta envergadura tiene un spec aprobado antes de implementarse.
+
+### Estructura de documentación
+
+```
+docs/
+  designs/    # Specs aprobados (output de /office-hours)
+  adr/        # Architecture Decision Records (decisiones permanentes)
+```
+
+### Reglas para Claude / gstack en cada iteración
+
+1. **Antes de implementar cualquier feature:** verificar si existe un spec en `docs/designs/`. Si no existe, sugerir `/office-hours` primero.
+2. **Al aprobar un design doc en `/office-hours`:** copiar el archivo desde `~/.gstack/projects/` a `docs/designs/YYYY-MM-DD-nombre.md` y commitear.
+3. **Al tomar una decisión arquitectónica importante** (cambio de dependencia, nueva tecnología, cambio de patrón): crear un ADR en `docs/adr/` con el siguiente número disponible. Leer `docs/adr/` para ver el último número.
+4. **Al iniciar una sesión:** leer los specs en `docs/designs/` que sean relevantes al trabajo actual.
+5. **`/plan-eng-review`** debe leer `docs/designs/` además de `~/.gstack/projects/` para encontrar el spec del feature a implementar.
+6. **`/document-release`** debe actualizar el spec en `docs/designs/` si el feature implementado difiere del spec original.
+
+### Workflow por feature
+
+```
+Problema → /office-hours → design doc aprobado → docs/designs/ → commit
+                                                        ↓
+                                               /plan-eng-review
+                                                        ↓
+                                               implementación
+                                                        ↓
+                                               /document-release
+```
+
+### ADRs existentes
+
+| # | Título | Status |
+|---|--------|--------|
+| 0001 | Fork Mariosd23 vs PyPI oficial | Accepted |
+| 0002 | SQLite local + Cookidoo source of truth | Accepted |
+| 0003 | fastmcp >=3.0.0 | Accepted |
+| 0004 | Spec-driven development con gstack | Accepted |
+
+---
+
 ## gstack
 
 Use the `/browse` skill from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools directly.
@@ -21,7 +65,7 @@ Fork mejorado de `alexandrepa/mcp-cookidoo`. MCP server local para Claude Deskto
 
 ## El ecosistema: 4 repos que interactúan
 
-### 1. `miaucl/cookidoo-api` — librería Python unofficial (v0.16.0 actual)
+### 1. `miaucl/cookidoo-api` — librería Python unofficial (v0.17.0 actual)
 
 Maneja auth, recetas, listas de la compra, planificador.
 
@@ -31,7 +75,7 @@ Maneja auth, recetas, listas de la compra, planificador.
 - `add_custom_recipe_from(recipeId, servingSize)` — copia una receta existente
 - `remove_custom_recipe(id)` — borrar
 
-**Lo que NO tiene:** `create_custom_recipe` ni `edit_custom_recipe`.
+**Lo que NO tiene:** `create_custom_recipe` ni `edit_custom_recipe` (v0.17.0 salió el 1 abril 2026 sin incluir PR #179).
 
 ### 2. `Mariosd23/cookidoo-api` — fork con PR #179 pendiente contra miaucl
 
@@ -49,12 +93,14 @@ Maneja auth, recetas, listas de la compra, planificador.
 
 **Estrategia de dependencia:**
 ```
-# Mientras PR #179 esté pendiente:
+# Mientras PR #179 esté pendiente (última actividad: 17 abril 2026):
 cookidoo-api @ git+https://github.com/Mariosd23/cookidoo-api.git@main
 
-# Cuando PR sea mergeado y salga v0.17.0:
-cookidoo-api>=0.17.0
+# Cuando PR #179 sea mergeado en miaucl/cookidoo-api Y salga una versión nueva que lo incluya:
+cookidoo-api>=0.18.0  # o la versión que corresponda — verificar que incluye create_custom_recipe
 ```
+
+**Nota:** v0.17.0 ya está en PyPI pero PR #179 NO estaba incluido. No cambiar la dependencia basándose en el número de versión solo — verificar que `Cookidoo` tenga `create_custom_recipe` antes de migrar.
 
 ### 3. `alexandrepa/mcp-cookidoo` — base del fork de servidor MCP
 
@@ -155,10 +201,10 @@ Pendiente evaluar si `CookidooInstruction` / `CookidooStepSettings` del fork Mar
 - [x] `COOKIDOO_COUNTRY`, `COOKIDOO_LANGUAGE`, `COOKIDOO_DEVICE` en `.env`
 - [x] `CookidooService` lee esas variables
 
-### Fase 4 — MCP Prompt `/receta` (pendiente)
-- [ ] Añadir `@mcp.prompt()` en `server.py` sin argumentos
-- [ ] Claude pregunta por la receta al invocar `/receta`
-- [ ] Embed de reglas guimatheus92: paso-ingrediente / paso-acción, vocabulario es-ES, límites por modelo
+### Fase 4 — MCP Prompt `/receta` ✅
+- [x] Añadir `@mcp.prompt()` en `server.py` sin argumentos
+- [x] Claude pregunta por la receta al invocar `/receta`
+- [x] Embed de reglas guimatheus92: paso-ingrediente / paso-acción, vocabulario es-ES, límites por modelo
 - [ ] Registrar MCP server en `claude_desktop_config.json`
 - [ ] Verificar slash command en Claude Desktop y Claude Code
 
