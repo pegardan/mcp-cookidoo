@@ -113,10 +113,11 @@ Encaja con el patrón establecido en el proyecto. `/receta` funciona porque Clau
 
 **`sync_library(collection_names: list[str] | None) → dict`**
 - Lee Custom Collections de Cookidoo (todas, o solo las indicadas por nombre)
+- **Estructura real de la API:** `CookidooCollection` no tiene `.recipes` directamente — tiene `.chapters` (lista de `CookidooChapter`). Hay que iterar `col.chapters[].recipes` para obtener las recetas. Cada `CookidooChapterRecipe` tiene `id`, `name`, `total_time` (int, en segundos).
 - Upsert por `id` (Cookidoo recipe ID como clave primaria): si existe → actualiza `synced_at` y `collection`; si no → inserta nueva fila
-- Las recetas del calendario (historial) se sincronizan con `last_cooked` y `times_cooked`
-- Retorna estadísticas: `{total: N, new: N, updated: N}`
-- **Error handling**: si la API falla, retorna el error sin romper la DB. El planning puede continuar usando datos locales existentes.
+- Todo el upsert va dentro de una sola transacción SQLite (performance)
+- **Fase 2 — historial de calendario:** llama `get_recipes_in_calendar_week(date)` para las últimas N semanas y actualiza `last_cooked` y `times_cooked`. `CookidooCalendarDay.id` es la fecha como string `"YYYY-MM-DD"`. Las recetas del catálogo aparecen en `.recipes`; las custom en `.customer_recipe_ids`.
+- **Error handling (dos fases independientes):** si la fase 2 (calendario) falla, se loguea y se continúa — el sync de recetas ya fue exitoso. Retorna `{total, new, updated, calendar_synced: bool}`.
 
 **`plan_week(week_start: str, constraints: str | None) → str`**
 - Lee `recipes.db` local (sin llamada a Cookidoo API en esta fase)
@@ -154,8 +155,13 @@ Encaja con el patrón establecido en el proyecto. `/receta` funciona porque Clau
   }
   ```
 - Días opcionales (null = sin receta ese día). No todos los días tienen que tener receta.
-- Para recetas custom: llama `add_custom_recipes_to_calendar(id, date)`. Para recetas del catálogo Cookidoo: `add_recipes_to_calendar(id, date)`. El campo `source` en la DB determina qué API usar.
-- Retorna confirmación con los días escritos.
+- **API confirmada (The Assignment 2026-04-19):** ambos endpoints aceptan fecha:
+  - `add_recipes_to_calendar(day: date, recipe_ids: list[str])` → catálogo Cookidoo
+  - `add_custom_recipes_to_calendar(day: date, recipe_ids: list[str])` → recetas custom
+  - Ambos retornan `CookidooCalendarDay`
+- El campo `source` en la DB determina qué API usar: `'cookidoo_custom'` → `add_custom_recipes_to_calendar`; `'cookidoo_managed'` o `'external'` → `add_recipes_to_calendar`.
+- Días con error se reportan individualmente — un fallo no cancela los demás días.
+- Retorna confirmación con los días escritos y cualquier error por día.
 
 **`rate_recipe(recipe_id: str, rating: int, notes: str | None) → str`**
 - Actualiza `family_rating` (1-5) y notas en SQLite local
@@ -163,8 +169,10 @@ Encaja con el patrón establecido en el proyecto. `/receta` funciona porque Clau
 
 **`browse_cookidoo_collections(page: int = 0) → list`**
 - Llama `get_managed_collections()` de la API
-- Retorna lista de colecciones curadas con nombre y descripción
+- **Estructura real (The Assignment 2026-04-19):** cada `CookidooCollection` tiene `.chapters` (lista de `CookidooChapter`), y cada capítulo tiene `.name` y `.recipes` (lista de `CookidooChapterRecipe` con `id`, `name`, `total_time` en segundos).
+- Retorna lista de colecciones con sus capítulos y recetas — Claude puede presentarlas al usuario para exploración
 - Punto de entrada para el discovery nativo
+- **Nota:** desbloqueado — la estructura de CookidooChapter está confirmada.
 
 ### MCP Prompt `/semana`
 
@@ -229,8 +237,8 @@ CREATE TABLE weekly_plans (
 
 ## Discovery Flow (dos vías)
 
-### Vía 1: Desde Cookidoo (POST-MVP)
-`browse_cookidoo_collections()` + navegación de capítulos requiere resolver la estructura de `CookidooChapter` primero (ver Open Questions #1). Este flujo es ambicioso para v1. Alternativa más simple para MVP: usuario encuentra una receta de Cookidoo en la app, copia el ID o URL, y lo añade manualmente a su colección dentro de la propia app de Cookidoo. Luego `sync_library` lo trae a la DB local. La navegación asistida via Claude es v2.
+### Vía 1: Desde Cookidoo (DESBLOQUEADO)
+`browse_cookidoo_collections()` está desbloqueado — la estructura de `CookidooChapter` está confirmada (ver Open Questions #1 resuelto). Claude puede presentar las colecciones curadas con sus capítulos y recetas para que el usuario explore. El usuario puede pedir añadir una receta a su colección propia desde la conversación.
 
 ### Vía 2: Externa (URL/texto/foto)
 1. Usuario usa `/receta` existente → receta creada en Cookidoo como custom recipe
@@ -241,10 +249,22 @@ CREATE TABLE weekly_plans (
 
 ## Open Questions
 
-1. **¿Qué hay dentro de `CookidooChapter`?** Para el discovery nativo, necesitamos ver qué recetas tiene cada capítulo de una managed collection. El contrato mínimo requerido: `get_managed_collections()` debe retornar `[CookidooCollection]` con capítulos que tengan al menos `id` y `name` de cada receta. **Bloqueante — resolver en el Assignment antes de implementar `browse_cookidoo_collections`.**
-2. **¿`add_recipes_to_calendar()` acepta parámetro de fecha?** El planning asume que se puede escribir una receta a un día específico. Si la API solo añade a un "calendario genérico", el flujo de `confirm_plan` necesita revisarse. **Bloqueante — verificar en el Assignment.**
+1. ~~**¿Qué hay dentro de `CookidooChapter`?**~~ **RESUELTO (2026-04-19)**
+   - `CookidooCollection.chapters` → lista de `CookidooChapter(name, recipes)`
+   - `CookidooChapterRecipe(id, name, total_time)` — `total_time` en segundos como int
+   - Tanto colecciones propias como curadas usan la misma estructura
+   - Colecciones propias del usuario: 8 colecciones (Meriendas saludables, Pescado, Comida saludable semana, etc.)
+
+2. ~~**¿`add_recipes_to_calendar()` acepta parámetro de fecha?**~~ **RESUELTO (2026-04-19)**
+   - `add_recipes_to_calendar(day: date, recipe_ids: list[str]) → CookidooCalendarDay` ✅
+   - `add_custom_recipes_to_calendar(day: date, recipe_ids: list[str]) → CookidooCalendarDay` ✅
+   - `get_recipes_in_calendar_week(monday: date) → list[CookidooCalendarDay]`
+   - `CookidooCalendarDay`: `id` (fecha "YYYY-MM-DD"), `title`, `recipes` (catálogo), `customer_recipe_ids` (custom)
+   - `CookidooCalendarDayRecipe`: `id`, `name`, `total_time` (string float — convertir con `int(float(x))`), `thumbnail`, `image`, `url`
+
 3. **¿Con qué frecuencia se sincroniza?** Propuesta: `sync_library` se invoca manualmente o al inicio de `/semana` si `synced_at` de la DB tiene más de 24 horas. Confirmar en implementación.
-4. **SSL**: el `verify_ssl=False` pendiente del TODO anterior. Evaluar si afecta el flujo de nuevos tools.
+
+4. **SSL**: el `verify_ssl=False` pendiente. Ver TODOS.md — no bloquea la implementación actual.
 
 ---
 
@@ -268,14 +288,16 @@ MCP server local — igual que el setup actual. Sin cambios en distribución. El
 ## Dependencies
 
 - `cookidoo-api` (Mariosd23 fork) — ya instalada, tiene todos los métodos necesarios
-- `aiosqlite` o `sqlite3` (stdlib) — para la DB local
-- Cookidoo Calendar API: `add_recipes_to_calendar`, `add_custom_recipes_to_calendar`, `get_recipes_in_calendar_week` — todos disponibles en el fork instalado
+- `aiosqlite` — para la DB local (async, no bloquea el event loop de FastMCP). Añadir a `requirements.txt`.
+- Cookidoo Calendar API: `add_recipes_to_calendar(day, recipe_ids)`, `add_custom_recipes_to_calendar(day, recipe_ids)`, `get_recipes_in_calendar_week(monday)` — todos disponibles y confirmados con cuenta real (2026-04-19)
 
 ---
 
 ## The Assignment
 
-**Esta semana:** Explorar qué devuelve `get_managed_collections()` y `get_recipes_in_calendar_week()` con tu cuenta real de Cookidoo. Eso responde la pregunta crítica (qué hay dentro de una colección curada y cuántos datos de historial hay disponibles) antes de construir nada. Dos llamadas API, 30 minutos.
+~~**Esta semana:** Explorar qué devuelve `get_managed_collections()` y `get_recipes_in_calendar_week()` con tu cuenta real de Cookidoo.~~
+
+**COMPLETADO (2026-04-19)** — Ver Open Questions #1 y #2 resueltos. Todos los bloqueantes de implementación están resueltos. Listo para desarrollar.
 
 ---
 

@@ -1,20 +1,18 @@
 # TODOS
 
-## Blocked / Pending
+## Ready to Build
 
 ### confirm_plan implementation
 **What:** MCP tool that writes a confirmed weekly meal plan to the Cookidoo calendar.
 **Why:** Completes the planning loop — sync → plan → approve → write to calendar.
-**Blocked by:** Open Question #2 from the design doc: does `add_recipes_to_calendar(id, date)` accept a date parameter? If not, the tool needs a different approach.
-**Context:** The Assignment (30-min API exploration with real Cookidoo account) resolves this. Run `get_recipes_in_calendar_week()` and `add_recipes_to_calendar()` with real credentials to see the actual API contract. See `docs/designs/2026-04-18-planificacion-semanal-discovery.md` §Open Questions #2.
-**Where to start:** After The Assignment, check the API response shape, then implement in `server.py` and `cookidoo_service.py`.
+**Unblocked (2026-04-19):** API confirmed — `add_recipes_to_calendar(day: date, recipe_ids)` and `add_custom_recipes_to_calendar(day: date, recipe_ids)` both accept date. Return `CookidooCalendarDay`.
+**Where to start:** `cookidoo_service.py` (add calendar write methods) + `server.py` (new tool). Source field in DB determines which API to call.
 
 ### browse_cookidoo_collections tool
 **What:** MCP tool to browse Cookidoo managed collections (curated recipe catalogs) for recipe discovery.
-**Why:** Enables discovery of new recipes within Cookidoo — users can find well-rated public recipes to add to their personal library.
-**Blocked by:** Open Question #1 from the design doc: what's inside `CookidooChapter`? Need to know the recipe list structure within a managed collection before the tool can be designed.
-**Context:** Also part of The Assignment — call `get_managed_collections()` with real credentials, inspect the structure. See `docs/designs/2026-04-18-planificacion-semanal-discovery.md` §Open Questions #1.
-**Where to start:** After The Assignment, check if `CookidooChapter` has recipe IDs/names. If yes, tool is straightforward. If not, alternative discovery flow needed.
+**Why:** Enables discovery of new recipes within Cookidoo — Claude can present collections, chapters and recipes for exploration.
+**Unblocked (2026-04-19):** CookidooChapter structure confirmed — `CookidooChapter(name, recipes=[CookidooChapterRecipe(id, name, total_time)])`. Full structure available.
+**Where to start:** `server.py` (new tool calling `api.get_managed_collections()`, iterate `.chapters[].recipes`).
 
 ## Technical Debt
 
